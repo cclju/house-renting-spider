@@ -13,14 +13,14 @@ from bs4 import BeautifulSoup
 import Config
 
 
-
 class Utils(object):
     @staticmethod
     def isInBalckList(blacklist, toSearch):
-        if blacklist:
+        if (not blacklist) or (blacklist[0] is ''):
             return False
         for item in blacklist:
             if toSearch.find(item) != -1:
+                print "in blacklist: " + toSearch
                 return True
         return False
 
@@ -43,7 +43,7 @@ class Utils(object):
 
 
 class Main(object):
-    douban_black_list=(u'搬家')
+    # douban_black_list=(u'搬家')
 
     def __init__(self, config):
         self.config = config
@@ -71,26 +71,35 @@ class Main(object):
             cursor.close()
             cursor = conn.cursor()
 
-
+            # 如果没有的话会返回 ['']
             search_list = self.config.key_search_word_list
             custom_black_list = self.config.custom_black_list
             start_time = Utils.getTimeFromStr(self.config.start_time)
 
             def urlList(page_number):
+                # 分页查找（豆瓣当前是按每页 50 条显示的）
                 num_in_url = str(page_number * 50)
-                douban_url = ['https://www.douban.com/group/search?start=' + num_in_url +'&group=146409&cat=1013&sort=time&q=',
-                              'https://www.douban.com/group/search?start=' + num_in_url +'&group=523355&cat=1013&sort=time&q=',
-                              'https://www.douban.com/group/search?start=' + num_in_url +'&group=557646&cat=1013&sort=time&q=',
-                              'https://www.douban.com/group/search?start=' + num_in_url +'&group=383972&cat=1013&sort=time&q=',
-                              'https://www.douban.com/group/search?start=' + num_in_url +'&group=283855&cat=1013&sort=time&q=',
-                              'https://www.douban.com/group/search?start=' + num_in_url +'&group=76231&cat=1013&sort=time&q=',
-                              'https://www.douban.com/group/search?start=' + num_in_url +'&group=196844&cat=1013&sort=time&q=',
-                              'https://www.douban.com/group/search?start=' + num_in_url +'&group=259227&cat=1013&sort=time&q=']
+                douban_url = [
+                    'https://www.douban.com/group/search?start=' + num_in_url + '&group=146409&cat=1013&sort=time&q=']
+                # douban_url = ['https://www.douban.com/group/search?start=' + num_in_url +'&group=146409&cat=1013&sort=time&q=',
+                #               'https://www.douban.com/group/search?start=' + num_in_url +'&group=523355&cat=1013&sort=time&q=',
+                #               'https://www.douban.com/group/search?start=' + num_in_url +'&group=557646&cat=1013&sort=time&q=',
+                #               'https://www.douban.com/group/search?start=' + num_in_url +'&group=383972&cat=1013&sort=time&q=',
+                #               'https://www.douban.com/group/search?start=' + num_in_url +'&group=283855&cat=1013&sort=time&q=',
+                #               'https://www.douban.com/group/search?start=' + num_in_url +'&group=76231&cat=1013&sort=time&q=',
+                #               'https://www.douban.com/group/search?start=' + num_in_url +'&group=196844&cat=1013&sort=time&q=',
+                #               'https://www.douban.com/group/search?start=' + num_in_url +'&group=259227&cat=1013&sort=time&q=']
                 return douban_url
-            douban_url_name = [u'上海租房', u'上海招聘，租房', u'上海租房(2)', u'上海合租族_魔都租房', u'上海租房@浦东租房', \
-                               u'上海租房---房子是租来的，生活不是', u'上海租房@长宁租房/徐汇/静安租房', u'上海租房（不良中介勿扰）']
 
+            douban_url_name = [u'上海租房']
+            # douban_url_name = [u'上海租房', u'上海招聘，租房', u'上海租房(2)', u'上海合租族_魔都租房', u'上海租房@浦东租房', \
+            #                    u'上海租房---房子是租来的，生活不是', u'上海租房@长宁租房/徐汇/静安租房', u'上海租房（不良中介勿扰）']
+
+            # i：          小组 index
+            # douban_url： 小组数组
+            # keyword：    包含关键字
             def crawl(i, douban_url, keyword, douban_headers):
+                # 构造 url
                 url_link = douban_url[i] + keyword
                 print 'url_link: ', url_link
                 r = requests.get(url_link, headers=douban_headers)
@@ -98,7 +107,7 @@ class Main(object):
                     try:
                         if i == 0:
                             self.douban_headers['Cookie'] = r.cookies
-                        soup = BeautifulSoup(r.text)
+                        soup = BeautifulSoup(r.text, "html.parser")
                         paginator = soup.find_all(attrs={'class': 'paginator'})[0]
                         # print "paginator: ", paginator
                         if (page_number != 0) and not paginator:
@@ -112,31 +121,38 @@ class Main(object):
                                 for tr in table.find_all('tr'):
                                     td = tr.find_all('td')
                                     title_element = td[0].find_all('a')[0]
+                                    # 标题
                                     title_text = title_element.get('title')
-                                    # ignore items in blacklist
+                                    # 标题 过滤黑名单上面的关键字
                                     if Utils.isInBalckList(custom_black_list, title_text):
                                         continue
-                                    if Utils.isInBalckList(self.douban_black_list, title_text):
-                                        continue
+                                    # if Utils.isInBalckList(self.douban_black_list, title_text):
+                                    #     continue
+                                    # 时间
                                     time_text = td[1].get('title')
-
-                                    if (page_number != 0) and (Utils.getTimeFromStr(time_text) < start_time):
+                                    # 时间 检查（结束的条件是配置文件里设置的起始时间）
+                                    if Utils.getTimeFromStr(time_text) < start_time:
                                         spider.ok = False
                                         break
-                                    # ignore data ahead of the specific date
-                                    if Utils.getTimeFromStr(time_text) < start_time:
-                                        continue
-                                    link_text = title_element.get('href');
+                                    # if (page_number != 0) and (Utils.getTimeFromStr(time_text) < start_time):
+                                    #     spider.ok = False
+                                    #     break
+                                    # # ignore data ahead of the specific date
+                                    # if Utils.getTimeFromStr(time_text) < start_time:
+                                    #     continue
 
+                                    # 链接
+                                    link_text = title_element.get('href')
+                                    # 回应
                                     reply_count = td[2].find_all('span')[0].text
+
                                     tr_count_for_this_page += 1
 
                                     try:
                                         cursor.execute(
                                             'INSERT INTO rent(id, title, url, itemtime, crawtime, source, keyword, note) VALUES(NULL, ?, ?, ?, ?, ?, ?, ?)',
                                             [title_text, link_text, Utils.getTimeFromStr(time_text),
-                                             datetime.datetime.now(), keyword,
-                                             douban_url_name[i], reply_count])
+                                             datetime.datetime.now(), douban_url_name[i], keyword, reply_count])
                                         print 'add new data:', title_text, time_text, reply_count, link_text, keyword
                                     except sqlite3.Error, e:
                                         print 'data exists:', title_text, link_text, e # 之前添加过了而URL（设置了唯一）一样会报错
@@ -153,23 +169,26 @@ class Main(object):
 
             print '爬虫开始运行...'
 
+            # 返回待查询小组的数组（参数 0 代表初始化，每一个都从 index = 0 记录开始查找）
+            # 查找的过程：取出每个小组，取出每一页（以起始时间为界），当前页所有记录匹配搜索关键字并且不在黑名单关键字的记录爬取
             douban_url = urlList(0)
             for i in range(len(douban_url)):
+                # 页数计数
                 page_number = 0
-
-                print 'start i ->',i
+                print 'start i ->', i
+                # 按关键字搜索
                 for j in range(len(search_list)):
                     spider.ok = True
                     page_number = 0
                     keyword = search_list[j]
-                    print 'start i->j %s -> %s %s' %(i, j, keyword)
-                    print '>>>>>>>>>> Search %s  %s ...' % (douban_url_name[i].encode('utf-8'), keyword)
+                    print '>>>>>>>>>> start i->j %s -> %s, Search: %s, keyword: %s ...' % (i, j, douban_url_name[i].encode('utf-8'), keyword)
                     
                     while spider.ok:
                         spider.ok = True
                         print 'i, j, page_number: ', i, j, page_number
                         
                         douban_url = urlList(page_number)
+
                         crawl(i, douban_url, keyword, self.douban_headers)
                         page_number += 1
 
@@ -234,11 +253,9 @@ class Main(object):
             #        #     #        #
             #        #     #        #
             ##########     ##########
-
-            苟利租房生死以，岂因祸福避趋之。
             '''
             print '========================================='
-            print '结果文件写入完毕。请打开"' + result_file_name + '.html"查看结果。'
+            print '结果文件写入完毕。请打开%s.html"查看结果。'%result_file_name
 
 
 
