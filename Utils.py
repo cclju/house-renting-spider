@@ -80,7 +80,9 @@ class Utils(object):
                 local_file.write(
                     '<tr><th>索引</th><th>标题</th><th>发帖时间</th><th>抓取时间</th><th>关键字</th><th>来源</th><th>回复数</th></tr>')
 
+                #  rent(id, title, url, itemtime, crawtime, source, keyword, note)
                 for row in values:
+                    print row
                     local_file.writelines('<tr>')
                     for i in range(len(row)):
                         if i == 2:
@@ -102,41 +104,80 @@ class Utils(object):
         except Exception, e:
             print 'error operate file:', e
 
-        # local_file = open(result_html_name, 'wb')
-        # with local_file:
-        #     local_file.write('''<html>
-        #                     <head>
-        #                     <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
-        #                     <title>上海租房信息 | 豆瓣</title>
-        #                     <link rel="stylesheet" type="text/css" href="../lib/resultPage.css">
-        #                     </head>
-        #                     <body>''')
-        #     local_file.write('<h1>上海租房信息 | </h1>')
-        #     local_file.write('''
-        #                     <a href="https://www.douban.com/" target="_black">
-        #                     <img src="https://img3.doubanio.com/f/shire/8977fa054324c4c7f565447b003ebf75e9b4f9c6/pics/nav/lg_main@2x.png" alt="豆瓣icon"/>
-        #                     </a>
-        #                     ''')
-        #     local_file.write('<table>')
-        #     local_file.write(
-        #         '<tr><th>索引</th><th>标题</th><th>发帖时间</th><th>抓取时间</th><th>关键字</th><th>来源</th><th>回复数</th></tr>')
-        #
-        #     for row in values:
-        #         local_file.writelines('<tr>')
-        #         for i in range(len(row)):
-        #             if i == 2:
-        #                 i += 1
-        #                 continue
-        #             local_file.write('<td class="column%s">' % str(i))
-        #             if i == 1:
-        #                 local_file.write('<a href="' + str(row[2]) + '" target="_black">' + str(row[1]) + '</a>')
-        #                 i += 1
-        #                 continue
-        #             local_file.write(str(row[i]))
-        #             i += 1
-        #             local_file.write('</td>')
-        #         local_file.write('</tr>')
-        #     local_file.write('</table>')
-        #     local_file.write('<script type="text/javascript" src="../lib/resultPage.js"></script>')
-        #     local_file.write('</body></html>')
+    @staticmethod
+    def my_get_time_from_str(time_str):
+        if '-' in time_str and ':' in time_str:  # 06-18 21:07
+            date_today = datetime.date.today()
+            date_with_year = str(date_today.year) + '-' + time_str
+            date = datetime.datetime.strptime(date_with_year, "%Y-%m-%d %H:%M")
+            return date
+        elif '-' in time_str:  # 2017-06-18
+            return datetime.datetime.strptime(time_str, "%Y-%m-%d")
 
+    @staticmethod
+    def my_url_list(page_number):
+        # 分页查找（豆瓣当前是按每页 50 条显示的） https://www.douban.com/group/145219/discussion?start=0
+        num_in_url = str(page_number * 50)
+        douban_url = [
+            'https://www.douban.com/group/145219/discussion?start=' + num_in_url]
+        return douban_url
+
+    @staticmethod
+    def my_url_name_list(index):
+        douban_url_name = [u'杭州 出租 租房 中介免入']
+        return douban_url_name[index]
+
+    @staticmethod
+    def my_write_to_file(values, result_html_name):
+        try:
+            local_file = open(result_html_name, 'wb')
+            with local_file:
+                local_file.write('''<html>
+                                        <head>
+                                        <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+                                        <title>租房信息 | 豆瓣</title>
+                                        <link rel="stylesheet" type="text/css" href="../lib/resultPage.css">
+                                        </head>
+                                        <body>''')
+                local_file.write('<h1>租房信息 | </h1>')
+                local_file.write('''
+                                        <a href="https://www.douban.com/" target="_black">
+                                        <img src="https://img3.doubanio.com/f/shire/8977fa054324c4c7f565447b003ebf75e9b4f9c6/pics/nav/lg_main@2x.png" alt="豆瓣icon"/>
+                                        </a>
+                                        ''')
+                local_file.write('<table>')
+                local_file.write(
+                    '<tr><th>索引</th><th>标题</th><th>作者</th><th>最后回应</th><th>抓取时间</th><th>小组</th><th>回应数</th></tr>')
+
+                # rent(id, title, url, user_name, content, last_updated_time, craw_time,
+                # source, reply_count)
+                for row in values:
+                    local_file.writelines('<tr>')
+                    for i in range(len(row)):
+                        if i in [2, 4]:
+                            i += 1
+                            continue
+                        local_file.write('<td class="column%s">' % str(i))
+                        if i == 1:
+                            local_file.write('<a href="' + str(row[2]) + '" target="_black">' + str(row[1]) + '</a>')
+                            i += 1
+                            continue
+                        local_file.write(str(row[i]))
+                        i += 1
+                        local_file.write('</td>')
+                    local_file.write('</tr>')
+                local_file.write('</table>')
+                local_file.write('<script type="text/javascript" src="../lib/resultPage.js"></script>')
+                local_file.write('</body></html>')
+
+        except Exception, e:
+            print 'error operate file:', e
+
+# last_updated_timestamp = Utils.my_get_time_from_str('06-19 21:07')
+# start_timestamp = Utils.my_get_time_from_str('2017-06-18')
+# print last_updated_timestamp
+# print start_timestamp
+# if last_updated_timestamp < start_timestamp:
+#     print 'out of time'
+# else:
+#     print '22222'
