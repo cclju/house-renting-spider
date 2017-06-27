@@ -8,6 +8,7 @@ import os
 
 import requests
 from bs4 import BeautifulSoup
+import re
 
 import Utils
 import Config
@@ -18,24 +19,70 @@ class Main(object):
     def __init__(self, config):
         self.config = config
         self.douban_headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/43.0.2357.81 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Encoding': 'gzip, deflate, sdch',
-            'Accept-Language': 'zh-CN,zh;q=0.8,en-US;q=0.6,en;q=0.4,en-GB;q=0.2,zh-TW;q=0.2',
-            'Connection': 'keep-alive',
-            'DNT': '1',
-            'HOST': 'www.douban.com',
-            'Cookie': self.config.douban_cookie
+            'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/43.0.2357.81 Safari/537.36'
+            # 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            # 'Accept-Encoding': 'gzip, deflate, sdch',
+            # 'Accept-Language': 'zh-CN,zh;q=0.8,en-US;q=0.6,en;q=0.4,en-GB;q=0.2,zh-TW;q=0.2',
+            # 'Connection': 'keep-alive',
+            # 'DNT': '1',
+            # 'HOST': 'www.douban.com',
+            # 'Cookie': self.config.douban_cookie
+        }
+        self.douban_cookie = {}
+        self.login_retry = 1
+
+    def login(self):
+        url_login = 'https://accounts.douban.com/login'
+        formdata = {
+            'redir': 'https://www.douban.com',
+            'form_email': '******',
+            'form_password': '******',
+            'login': u'登陆'
         }
 
-    def crawl_detail_page(self, cursor, i, detail_link, douban_headers):
+        r = requests.post(url_login, data=formdata, headers=self.douban_headers)
+        if r.status_code == 200:
+            content = r.text
+            soup = BeautifulSoup(content, 'html.parser')
+            captcha = soup.find('img', id='captcha_image')  # 当登陆需要验证码的时候
+            if captcha:
+                print '有验证码'
+                captcha_url = captcha['src']
+                re_captcha_id = r'<input type="hidden" name="captcha-id" value="(.*?)"/'
+                captcha_id = re.findall(re_captcha_id, content)
+                print(captcha_id)
+                print(captcha_url)
+                captcha_text = raw_input('Please input the captcha:')
+                formdata['captcha-solution'] = captcha_text
+                formdata['captcha-id'] = captcha_id
+            else:
+                print '无验证码'
+
+            print '正在登录中……'
+            r = spider.request_session.post(url_login, data=formdata, headers=self.douban_headers)
+            if r.url == 'https://www.douban.com':
+                # save cookies
+                # self.douban_headers['Cookie'] = r.cookies
+                self.douban_cookie = r.cookies
+                print '登录成功'
+            else:
+                print '登录失败', r.text
+                if self.login_retry > 0:
+                    print '重试……'
+                    self.login_retry -= 1
+                    self.login()
+
+        else:
+            print 'request url error %s -status code: %s:' % (url_login, r.status_code)
+
+    def crawl_detail_page(self, cursor, i, detail_link):
         print 'detail_url_link: ', detail_link
-        r = requests.get(detail_link, headers=douban_headers, proxies=spider.proxies)
+        r = spider.request_session.get(detail_link, cookies=self.douban_cookie, headers=self.douban_headers)  # proxies=spider.proxies
         if r.status_code == 200:
             try:
-                if i == 0 and not self.douban_headers['Cookie']:
-                    print 'set cookie in crawl detail page'
-                    self.douban_headers['Cookie'] = r.cookies
+                # if i == 0 and not self.douban_headers['Cookie']:
+                #     print 'set cookie in crawl detail page'
+                #     self.douban_headers['Cookie'] = r.cookies
                 soup = BeautifulSoup(r.text, "html.parser")
 
                 # print soup.prettify()
@@ -75,16 +122,16 @@ class Main(object):
     # i：          小组 index
     # douban_url： 小组数组
     # keyword：    包含关键字
-    def crawl_list_page(self, cursor, i, douban_url, page_number, start_timestamp, douban_headers):
+    def crawl_list_page(self, cursor, i, douban_url, page_number, start_timestamp):
         # 构造 url
         url_link = douban_url[i]
         print 'list_url_link: ', url_link
-        r = requests.get(url_link, headers=douban_headers, proxies=spider.proxies)
+        r = spider.request_session.get(url_link, cookies=self.douban_cookie, headers=self.douban_headers)
         if r.status_code == 200:
             try:
-                if i == 0 and page_number == 0 and not self.douban_headers['Cookie']:
-                    print 'set cookie in crawl list page'
-                    self.douban_headers['Cookie'] = r.cookies
+                # if i == 0 and page_number == 0 and not self.douban_headers['Cookie']:
+                #     print 'set cookie in crawl list page'
+                #     self.douban_headers['Cookie'] = r.cookies
                 soup = BeautifulSoup(r.text, "html.parser")
                 paginator = soup.find_all(attrs={'class': 'paginator'})[0]
                 # print "paginator: ", paginator
@@ -156,7 +203,6 @@ class Main(object):
             # cursor = conn.cursor()
 
             start_timestamp = Utils.Utils.my_get_time_from_str(self.config.start_time)
-            douban_headers = self.douban_headers
 
             print '========== 爬虫开始运行... =========='
 
@@ -176,7 +222,7 @@ class Main(object):
 
                     douban_url = Utils.Utils.my_url_list(page_number)
                     # 开始爬取
-                    self.crawl_list_page(cursor, i, douban_url, page_number, start_timestamp, douban_headers)
+                    self.crawl_list_page(cursor, i, douban_url, page_number, start_timestamp)
                     # 下一页
                     page_number += 1
                     break  # test once
@@ -196,7 +242,7 @@ class Main(object):
             index = 0
             for detail_link in detail_link_values:
                 # print detail_link[0]
-                self.crawl_detail_page(cursor, index, detail_link[0], douban_headers)
+                self.crawl_detail_page(cursor, index, detail_link[0])
                 index += 1
 
             print '========== 爬取豆瓣详情页面完成！ =========='
@@ -232,8 +278,11 @@ class Main(object):
 class Spider(object):
     def __init__(self):
         # 取代理 ip
-        proxy_pool = ProxyPool.ProxyPool()
-        self.proxies = proxy_pool.getproxy()
+        # proxy_pool = ProxyPool.ProxyPool()
+        # self.proxies = proxy_pool.getproxy()
+        self.proxies = ''
+
+        self.request_session = requests.Session()
 
         this_file_dir = os.path.split(os.path.realpath(__file__))[0]
         config_file_path = os.path.join(this_file_dir, 'config.ini')
@@ -265,10 +314,12 @@ class Spider(object):
 
     def run(self):
         main = Main(self.config)
+        main.login()
         main.run()
 
-        # main.crawl_detail_page('', 0, 'https://www.douban.com/group/topic/104112092/', main.douban_headers)
-        # main.crawl_detail_page('', 0, 'https://www.douban.com/group/topic/104113127/', main.douban_headers)
+        # main.crawl_detail_page('', 0, 'https://www.douban.com/group/topic/104164092/')
+        # main.crawl_detail_page('', 1, 'https://www.douban.com/group/topic/104162461/')
+        # main.crawl_detail_page('', 2, 'https://www.douban.com/group/topic/104175357/')
 
         return False
 
