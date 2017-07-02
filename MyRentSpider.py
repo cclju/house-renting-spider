@@ -9,6 +9,7 @@ import os
 import requests
 from bs4 import BeautifulSoup
 import re
+import csv
 
 import Utils
 import Config
@@ -29,18 +30,18 @@ class Main(object):
             # 'Cookie': self.config.douban_cookie
         }
         self.douban_cookie = {}
-        self.login_retry = 1
+        self.login_retry = 3
 
     def login(self):
         url_login = 'https://accounts.douban.com/login'
         formdata = {
             'redir': 'https://www.douban.com',
-            'form_email': '******',
-            'form_password': '******',
+            'form_email': '登录邮箱',
+            'form_password': '密码',
             'login': u'登陆'
         }
 
-        r = requests.post(url_login, data=formdata, headers=self.douban_headers)
+        r = spider.request_session.post(url_login, data=formdata, headers=self.douban_headers)
         if r.status_code == 200:
             content = r.text
             soup = BeautifulSoup(content, 'html.parser')
@@ -65,15 +66,19 @@ class Main(object):
                 # self.douban_headers['Cookie'] = r.cookies
                 self.douban_cookie = r.cookies
                 print '登录成功'
+                return True
             else:
                 print '登录失败', r.text
                 if self.login_retry > 0:
-                    print '重试……'
+                    print '重试……', self.login_retry
                     self.login_retry -= 1
                     self.login()
+                else:
+                    return False
 
         else:
             print 'request url error %s -status code: %s:' % (url_login, r.status_code)
+            return False
 
     def crawl_detail_page(self, cursor, i, detail_link):
         print 'detail_url_link: ', detail_link
@@ -172,7 +177,7 @@ class Main(object):
                                 # source, reply_count)
                                 cursor.execute(spider.insert_sql, [title_text, link_text,
                                                                    user_name_text,
-                                                                   '',
+                                                                   '', '', '', '',
                                                                    last_updated_timestamp,
                                                                    Utils.Utils.get_time_now(),
                                                                    Utils.Utils.my_url_name_list(i),
@@ -191,6 +196,30 @@ class Main(object):
         # sleep for a while
         time.sleep(self.config.douban_sleep_time)
 
+    def update_detail_info(self, cursor):
+        cursor.execute(spider.select_complete_data_sql)
+        detail_info_values = cursor.fetchall()
+        item_count = len(detail_info_values)
+        print 'item count:', item_count
+        for detail_array in detail_info_values:
+            if not detail_array[3] and not detail_array[4] and not detail_array[5]:
+                detail_link = detail_array[0]
+                print 'item not complete, detail link:', detail_link
+                print '[title]:\n', detail_array[1]
+                print '[content]:\n', detail_array[2]
+                # update_content_other_sql = 'UPDATE rent SET area = ?, geo_point = ?, contact = ? WHERE url = ?'
+                detail_area = raw_input('Please input [area]:')
+                detail_geo_point = raw_input('Please input [geo_point]:')
+                detail_contact = raw_input('Please input [contact]:')
+
+                try:
+                    cursor.execute(spider.update_content_other_sql, [detail_area, detail_geo_point, detail_contact,
+                                                                     detail_link])
+                    print 'Manual update content.'
+                except sqlite3.Error, e:
+                    print 'Manual update content error:', e
+            print 'item complete！'
+
     def run(self):
         try:
             print '========== 打开数据库... =========='
@@ -206,7 +235,7 @@ class Main(object):
 
             print '========== 爬虫开始运行... =========='
 
-            print '========== 爬取豆瓣列表页面... =========='
+            print '========== 1）爬取豆瓣列表页面... =========='
 
             # 返回待查询小组的数组（参数 0 代表初始化，每一个都从 index = 0 记录开始查找）
             # 查找的过程：取出每个小组，取出每一页（以起始时间为界），当前页所有记录匹配搜索关键字并且不在黑名单关键字的记录爬取
@@ -230,7 +259,7 @@ class Main(object):
 
             print '========== 爬取豆瓣列表页面完成！ =========='
 
-            print '========== 爬取豆瓣详情页面... =========='
+            print '========== 2）爬取豆瓣详情页面... =========='
             # 获取抓取的数据
             # cursor.close()
             # cursor = conn.cursor()
@@ -246,6 +275,12 @@ class Main(object):
                 index += 1
 
             print '========== 爬取豆瓣详情页面完成！ =========='
+
+            print '========== 3）手动填入信息 - 地区 + 坐标 + 联系方式... =========='
+
+            self.update_detail_info(cursor)
+
+            print '========== 手动填入信息完成！ =========='
 
             print '========== 爬虫运行结束，开始写入结果文件 =========='
 
@@ -306,20 +341,49 @@ class Spider(object):
         # 网页文件名
         self.result_html_name = self.result_file_name + '.html'
 
-        self.create_table_sql = 'CREATE TABLE IF NOT EXISTS rent(id INTEGER PRIMARY KEY, title TEXT, url TEXT UNIQUE, user_name TEXT, content TEXT, last_updated_time timestamp, craw_time timestamp, source TEXT, reply_count TEXT)'
-        self.insert_sql = 'INSERT INTO rent(id, title, url, user_name, content, last_updated_time, craw_time, source, reply_count) VALUES(NULL, ?, ?, ?, ?, ?, ?, ?, ?)'
+        self.create_table_sql = 'CREATE TABLE IF NOT EXISTS rent(id INTEGER PRIMARY KEY, title TEXT, url TEXT UNIQUE,' \
+                                'user_name TEXT, content TEXT, area TEXT, geo_point TEXT, contact TEXT,' \
+                                'last_updated_time timestamp, craw_time timestamp, source TEXT, reply_count TEXT)'
+        self.insert_sql = 'INSERT INTO rent(id, title, url, user_name, content, area, geo_point, contact,' \
+                          'last_updated_time, craw_time, source, reply_count) ' \
+                          'VALUES(NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         self.select_detail_link_sql = 'SELECT url FROM rent'
+        self.select_complete_data_sql = 'SELECT url, title, content, area, geo_point, contact FROM rent'
         self.update_content_sql = 'UPDATE rent SET content = ? WHERE url = ?'
+        self.update_content_other_sql = 'UPDATE rent SET area = ?, geo_point = ?, contact = ? WHERE url = ?'
         self.select_sql = 'SELECT * FROM rent ORDER BY last_updated_time DESC ,craw_time DESC'
 
     def run(self):
         main = Main(self.config)
-        main.login()
-        main.run()
+        login_result = main.login()
+        if login_result:
+            main.run()
 
-        # main.crawl_detail_page('', 0, 'https://www.douban.com/group/topic/104164092/')
-        # main.crawl_detail_page('', 1, 'https://www.douban.com/group/topic/104162461/')
-        # main.crawl_detail_page('', 2, 'https://www.douban.com/group/topic/104175357/')
+        # 手动设置某一条记录
+        # conn = sqlite3.connect('results/result_20170701_110317.sqlite')
+        # conn.text_factory = str
+        # cursor = conn.cursor()
+        # main.update_detail_info(cursor)
+        # cursor.close()
+
+        # 导出 cvs 格式文件
+        # conn = sqlite3.connect('results/result_20170701_110317.sqlite')
+        # conn.text_factory = str
+        # cursor = conn.cursor()
+        # cursor.execute(spider.select_sql)
+        # values = cursor.fetchall()
+        #
+        # rent_file = open('rent.csv', 'wb')
+        # writer = csv.writer(rent_file)
+        # writer.writerow(['title', 'url', 'user_name', 'content', 'area', 'geo_point', 'contact', 'last_updated_time'])
+        #
+        # # (id, title, url, user_name, content, area, geo_point, contact, last_updated_time, craw_time, source,
+        # # reply_count)
+        # for row in values:
+        #     writer.writerow([str(row[1]), str(row[2]), str(row[3]), str(row[4]), str(row[5]), str(row[6]), str(row[7]),
+        #                      str(row[8])])
+        # rent_file.close()
+        # cursor.close()
 
         return False
 
