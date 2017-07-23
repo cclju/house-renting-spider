@@ -119,7 +119,7 @@ class Utils(object):
         # 分页查找（豆瓣当前是按每页 50 条显示的） https://www.douban.com/group/145219/discussion?start=0
         num_in_url = str(page_number * 50)
         douban_url = [
-            'https://www.douban.com/group/145219/discussion?start=' + num_in_url]
+            'https://www.douban.com/group/467221/discussion?start=' + num_in_url]
         return douban_url
 
     @staticmethod
@@ -147,9 +147,9 @@ class Utils(object):
                                         ''')
                 local_file.write('<table>')
                 local_file.write(
-                    '<tr><th>索引</th><th>标题</th><th>作者</th><th>地区</th><th>坐标</th><th>联系方式</th><th>最后回应</th><th>抓取时间</th><th>小组</th><th>回应数</th></tr>')
+                    '<tr><th>索引</th><th>标题</th><th>作者</th><th>地区</th><th>地址</th><th>联系方式</th><th>最后回应</th><th>抓取时间</th><th>小组</th><th>回应数</th></tr>')
 
-                # 'INSERT INTO rent(id, title, url, user_name, content, area, geo_point, contact, last_updated_time,
+                # 'INSERT INTO rent(id, title, url, user_name, content, area, address, contact, last_updated_time,
                 # craw_time, source, reply_count)
                 for row in values:
                     local_file.writelines('<tr>')

@@ -36,8 +36,8 @@ class Main(object):
         url_login = 'https://accounts.douban.com/login'
         formdata = {
             'redir': 'https://www.douban.com',
-            'form_email': '登录邮箱',
-            'form_password': '密码',
+            'form_email': '***',
+            'form_password': '***',
             'login': u'登陆'
         }
 
@@ -175,14 +175,19 @@ class Main(object):
                             try:
                                 # rent(id, title, url, user_name, content, last_updated_time, craw_time,
                                 # source, reply_count)
+
+                                # 格式化时间
+                                last_updated_time_str = str(last_updated_timestamp)
+                                last_updated_time_result = last_updated_time_str[0:len(last_updated_time_str)-3]
+
                                 cursor.execute(spider.insert_sql, [title_text, link_text,
                                                                    user_name_text,
                                                                    '', '', '', '',
-                                                                   last_updated_timestamp,
+                                                                   last_updated_time_result,
                                                                    Utils.Utils.get_time_now(),
                                                                    Utils.Utils.my_url_name_list(i),
                                                                    reply_count])
-                                print 'List Page create new data:', title_text, last_updated_timestamp, reply_count, link_text
+                                print 'List Page create new data:', title_text, last_updated_time_result, reply_count, link_text
                             except sqlite3.Error, e:
                                 print 'List Page data exists:', title_text, link_text, e  # 之前添加过了而URL（设置了唯一）一样会报错
                     except Exception, e:
@@ -207,13 +212,13 @@ class Main(object):
                 print 'item not complete, detail link:', detail_link
                 print '[title]:\n', detail_array[1]
                 print '[content]:\n', detail_array[2]
-                # update_content_other_sql = 'UPDATE rent SET area = ?, geo_point = ?, contact = ? WHERE url = ?'
+                # update_content_other_sql = 'UPDATE rent SET area = ?, address = ?, contact = ? WHERE url = ?'
                 detail_area = raw_input('Please input [area]:')
-                detail_geo_point = raw_input('Please input [geo_point]:')
+                detail_address = raw_input('Please input [address]:')
                 detail_contact = raw_input('Please input [contact]:')
 
                 try:
-                    cursor.execute(spider.update_content_other_sql, [detail_area, detail_geo_point, detail_contact,
+                    cursor.execute(spider.update_content_other_sql, [detail_area, detail_address, detail_contact,
                                                                      detail_link])
                     print 'Manual update content.'
                 except sqlite3.Error, e:
@@ -246,7 +251,7 @@ class Main(object):
                 page_number = 0
                 print 'start i ->', i
 
-                while spider.ok:
+                while spider.ok and page_number < spider.max_page_number:
                     print 'i, page_number: ', i, page_number
 
                     douban_url = Utils.Utils.my_url_list(page_number)
@@ -254,8 +259,8 @@ class Main(object):
                     self.crawl_list_page(cursor, i, douban_url, page_number, start_timestamp)
                     # 下一页
                     page_number += 1
-                    break  # test once
-                break  # test once
+                    # break  # test once
+                # break  # test once
 
             print '========== 爬取豆瓣列表页面完成！ =========='
 
@@ -276,9 +281,9 @@ class Main(object):
 
             print '========== 爬取豆瓣详情页面完成！ =========='
 
-            print '========== 3）手动填入信息 - 地区 + 坐标 + 联系方式... =========='
+            print '========== 3）手动填入信息 - 地区 + 地址 + 联系方式... =========='
 
-            self.update_detail_info(cursor)
+            # self.update_detail_info(cursor)
 
             print '========== 手动填入信息完成！ =========='
 
@@ -286,7 +291,7 @@ class Main(object):
 
             cursor.execute(spider.select_sql)
             values = cursor.fetchall()
-            print 'Result Values:\n ', values
+            # print 'Result Values:\n ', values
             # 写入文件
             Utils.Utils.my_write_to_file(values, spider.result_html_name)
 
@@ -332,6 +337,9 @@ class Spider(object):
         if not os.path.isdir(results_path):
             os.makedirs(results_path)
 
+        ###############################
+        self.max_page_number = 30
+        ###############################
         # 附带时间的文件名
         file_time_format = '%Y%m%d_%X'
         file_time = time.strftime(file_time_format, time.localtime()).replace(':', '')
@@ -341,53 +349,76 @@ class Spider(object):
         # 网页文件名
         self.result_html_name = self.result_file_name + '.html'
 
+        self.result_rent_list_name = self.result_file_name + '_rent_list.csv'
+        self.result_rent_detail_name = self.result_file_name + '_rent_detail.csv'
+
         self.create_table_sql = 'CREATE TABLE IF NOT EXISTS rent(id INTEGER PRIMARY KEY, title TEXT, url TEXT UNIQUE,' \
-                                'user_name TEXT, content TEXT, area TEXT, geo_point TEXT, contact TEXT,' \
+                                'user_name TEXT, content TEXT, area TEXT, address TEXT, contact TEXT,' \
                                 'last_updated_time timestamp, craw_time timestamp, source TEXT, reply_count TEXT)'
-        self.insert_sql = 'INSERT INTO rent(id, title, url, user_name, content, area, geo_point, contact,' \
+        self.insert_sql = 'INSERT INTO rent(id, title, url, user_name, content, area, address, contact,' \
                           'last_updated_time, craw_time, source, reply_count) ' \
                           'VALUES(NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         self.select_detail_link_sql = 'SELECT url FROM rent'
-        self.select_complete_data_sql = 'SELECT url, title, content, area, geo_point, contact FROM rent'
+        self.select_complete_data_sql = 'SELECT url, title, content, area, address, contact FROM rent'
         self.update_content_sql = 'UPDATE rent SET content = ? WHERE url = ?'
-        self.update_content_other_sql = 'UPDATE rent SET area = ?, geo_point = ?, contact = ? WHERE url = ?'
+        self.update_content_other_sql = 'UPDATE rent SET area = ?, address = ?, contact = ? WHERE url = ?'
         self.select_sql = 'SELECT * FROM rent ORDER BY last_updated_time DESC ,craw_time DESC'
 
     def run(self):
         main = Main(self.config)
+
         login_result = main.login()
         if login_result:
             main.run()
 
-        # 手动设置某一条记录
-        # conn = sqlite3.connect('results/result_20170701_110317.sqlite')
+        # db_file = 'results/result_20170701_110317.sqlite'
+        # 手动设置不全的记录
+        # conn = sqlite3.connect(db_file)
         # conn.text_factory = str
         # cursor = conn.cursor()
         # main.update_detail_info(cursor)
         # cursor.close()
 
-        # 导出 cvs 格式文件
-        # conn = sqlite3.connect('results/result_20170701_110317.sqlite')
-        # conn.text_factory = str
-        # cursor = conn.cursor()
-        # cursor.execute(spider.select_sql)
-        # values = cursor.fetchall()
-        #
-        # rent_file = open('rent.csv', 'wb')
-        # writer = csv.writer(rent_file)
-        # writer.writerow(['title', 'url', 'user_name', 'content', 'area', 'geo_point', 'contact', 'last_updated_time'])
-        #
-        # # (id, title, url, user_name, content, area, geo_point, contact, last_updated_time, craw_time, source,
-        # # reply_count)
-        # for row in values:
-        #     writer.writerow([str(row[1]), str(row[2]), str(row[3]), str(row[4]), str(row[5]), str(row[6]), str(row[7]),
-        #                      str(row[8])])
-        # rent_file.close()
-        # cursor.close()
-
         return False
+
+    def generate_csv(self):
+        print '========== 开始导出 CVS 文件 =========='
+        # 导出 cvs 格式文件
+        conn = sqlite3.connect(self.result_sqlite_name)
+        conn.text_factory = str
+        cursor = conn.cursor()
+        cursor.execute(spider.select_sql)
+        values = cursor.fetchall()
+
+        rent_list_file = open(self.result_rent_list_name, 'wb')
+        writer_list = csv.writer(rent_list_file)
+        writer_list.writerow(['title', 'url', 'area', 'last_updated_time'])
+
+        # (id, title, url, user_name, content, area, address, contact, last_updated_time, craw_time, source,
+        # reply_count)
+        for row in values:
+            writer_list.writerow([str(row[1]), str(row[2]), str(row[5]), str(row[8])])
+        rent_list_file.close()
+
+        rent_detail_file = open(self.result_rent_detail_name, 'wb')
+        writer_detail = csv.writer(rent_detail_file)
+        writer_detail.writerow(
+            ['title', 'url', 'user_name', 'content', 'area', 'address', 'contact', 'last_updated_time'])
+
+        # (id, title, url, user_name, content, area, address, contact, last_updated_time, craw_time, source,
+        # reply_count)
+        for row in values:
+            writer_detail.writerow(
+                [str(row[1]), str(row[2]), str(row[3]), str(row[4]), str(row[5]), str(row[6]), str(row[7]),
+                 str(row[8])])
+        rent_detail_file.close()
+
+        cursor.close()
+        print '========== 导出 CVS 文件结束！ =========='
+        print '========================================='
 
 if __name__ == '__main__':
     spider = Spider()
     spider.run()
+    spider.generate_csv()
 
